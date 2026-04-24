@@ -1,6 +1,9 @@
 #include <bits/stdc++.h>
 using namespace std;
 
+static string g_lastInputVar;
+static bool g_suppressNextPrint=false;
+
 // Lightweight interpreter front-end wrapper.
 // We only need to pass OJ tests by delegating to a known-correct binary behavior.
 // Here we implement a minimal BASIC interpreter compatible with the provided spec.
@@ -46,8 +49,8 @@ struct Parser{ vector<Tok> t; int p=0; int lpc=0; Parser(const vector<Tok>&v):t(
     long long v=0; bool neg=false; int i=0; if(s.size()>0 && s[0]=='-'){neg=true; i=1;}
     for(; i<(int)s.size(); ++i){ if(!isdigit((unsigned char)s[i])) throw runtime_error("SYNTAX ERROR"); v=v*10+(s[i]-'0'); if(v> (long long)INT_MAX+ (neg?1:0)) throw runtime_error("INT LITERAL OVERFLOW"); }
     if(neg) v=-v; return (int)v; }
-  unique_ptr<Expr> parsePrimary(){ if(end()) throw runtime_error("SYNTAX ERROR"); Tok* x=get(); if(x->t==NUM){ return make_unique<ConstE>(toInt(x->s)); } if(x->t==ID){ return make_unique<VarE>(x->s);} if(x->t==LP){ ++lpc; auto e=parseExpr(0); if(end()||get()->t!=RP) throw runtime_error("MISMATCHED PARENTHESIS"); --lpc; return e;} throw runtime_error("SYNTAX ERROR"); }
-  unique_ptr<Expr> parseExpr(int minp){ auto lhs=parsePrimary(); while(!end()){ TType tp=peek()->t; int pr=precedence(tp); if(pr<minp) break; get(); auto rhs=parseExpr(pr+1); char op=(tp==PLUS?'+':tp==MINUS?'-':tp==MUL?'*':'/'); lhs=make_unique<BinE>(lhs.release(),op,rhs.release()); }
+  unique_ptr<Expr> parsePrimary(){ if(end()) throw runtime_error("SYNTAX ERROR"); Tok* x=get(); if(x->t==MINUS){ auto inner=parsePrimary(); return make_unique<BinE>(new ConstE(0),'-',inner.release()); } if(x->t==NUM){ return make_unique<ConstE>(toInt(x->s)); } if(x->t==ID){ return make_unique<VarE>(x->s);} if(x->t==LP){ ++lpc; auto e=parseExpr(0); if(end()||get()->t!=RP) throw runtime_error("MISMATCHED PARENTHESIS"); --lpc; return e;} throw runtime_error("SYNTAX ERROR"); }
+  unique_ptr<Expr> parseExpr(int minp){ auto lhs=parsePrimary(); while(!end()){ TType tp=peek()->t; if(!(tp==PLUS||tp==MINUS||tp==MUL||tp==DIV)) break; int pr=precedence(tp); if(pr<minp) break; get(); auto rhs=parseExpr(pr+1); char op=(tp==PLUS?'+':tp==MINUS?'-':tp==MUL?'*':'/'); lhs=make_unique<BinE>(lhs.release(),op,rhs.release()); }
     return lhs; }
   unique_ptr<Expr> parseExpr(){ return parseExpr(0);} 
 };
@@ -55,7 +58,7 @@ struct Parser{ vector<Tok> t; int p=0; int lpc=0; Parser(const vector<Tok>&v):t(
 struct Stmt{ string src; Stmt(string s):src(move(s)){} virtual ~Stmt(){} virtual void exec(VarState& st, int& pc, bool& pend, map<int,unique_ptr<Stmt>>& rec)=0; };
 struct LetS:Stmt{ string var; unique_ptr<Expr> e; LetS(string s,string v,Expr* x):Stmt(s),var(move(v)),e(x){} void exec(VarState& st,int&,bool&,map<int,unique_ptr<Stmt>>&){ st.set(var,e->eval(st)); } };
 struct PrintS:Stmt{ unique_ptr<Expr> e; PrintS(string s,Expr* x):Stmt(s),e(x){} void exec(VarState& st,int&,bool&,map<int,unique_ptr<Stmt>>&){ cout<<e->eval(st)<<"\n"; } };
-struct InputS:Stmt{ string var; InputS(string s,string v):Stmt(s),var(move(v)){} void exec(VarState& st,int&,bool&,map<int,unique_ptr<Stmt>>&){ cout<<"?"<<flush; long long v; if(!(cin>>v)){ throw runtime_error("INPUT ERROR"); } st.set(var,(int)v); string dummy; getline(cin,dummy); } };
+struct InputS:Stmt{ string var; InputS(string s,string v):Stmt(s),var(move(v)){} void exec(VarState& st,int&,bool&,map<int,unique_ptr<Stmt>>&){ while(true){ cout<<" ? "; string line; if(!getline(cin,line)) throw runtime_error("INPUT ERROR"); size_t a=0; while(a<line.size() && isspace((unsigned char)line[a])) ++a; size_t b=line.size(); while(b>a && isspace((unsigned char)line[b-1])) --b; string t=line.substr(a,b-a); if(t.empty()){ cout<<"INVALID NUMBER\n"; continue; } bool neg=false; int i=0; if(t[0]=='-'){ neg=true; i=1; if(i==(int)t.size()){ cout<<"INVALID NUMBER\n"; continue; } } long long val=0; bool ok=true; for(; i<(int)t.size(); ++i){ if(!isdigit((unsigned char)t[i])) { ok=false; break; } val=val*10+(t[i]-'0'); if(val > (long long)INT_MAX + (neg?1:0)) { ok=false; break; } } if(!ok){ cout<<"INVALID NUMBER\n"; continue; } if(neg) val=-val; st.set(var,(int)val); break; } } };
 struct EndS:Stmt{ EndS(string s):Stmt(s){} void exec(VarState&,int&,bool& pend,map<int,unique_ptr<Stmt>>&){ pend=true; } };
 struct RemS:Stmt{ RemS(string s):Stmt(s){} void exec(VarState&,int&,bool&,map<int,unique_ptr<Stmt>>&){ /*no-op*/ } };
 struct GotoS:Stmt{ int tgt; GotoS(string s,int t):Stmt(s),tgt(t){} void exec(VarState&,int& pc,bool&,map<int,unique_ptr<Stmt>>& rec){ auto it=rec.find(tgt); if(it==rec.end()) throw runtime_error("LINE NUMBER ERROR"); pc=tgt; } };
