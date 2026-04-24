@@ -94,7 +94,10 @@ int main(){ ios::sync_with_stdio(false); cin.tie(nullptr);
       if(rest[0].t==CLEAR){ prog.clear(); continue; }
       if(rest[0].t==QUIT){ break; }
       if(rest[0].t==HELPkw){ cout<<"Available commands: LET, PRINT, INPUT, END, REM, GOTO, IF ... THEN, RUN, LIST, CLEAR, QUIT, HELP\n"; continue; }
-      Stmt* s=parseStatement(rest,line.substr(idx? line.find_first_not_of(' '):0));
+      // Build original statement text (without the leading line number)
+      string stmtText;
+      if(hasLine){ size_t pos=0; while(pos<line.size() && isspace(static_cast<unsigned char>(line[pos]))) ++pos; while(pos<line.size() && isdigit(static_cast<unsigned char>(line[pos]))) ++pos; while(pos<line.size() && isspace(static_cast<unsigned char>(line[pos]))) ++pos; stmtText = line.substr(pos); }
+      Stmt* s=parseStatement(rest, hasLine? stmtText : line);
       if(hasLine){ prog.add(lineNum,s); } else { prog.execImmediate(s); }
     } catch(const exception& e){ cout<<e.what()<<"\n"; }
   }
